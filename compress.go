@@ -151,7 +151,7 @@ func compress(in []byte) (out []byte, sz int) {
 }
 
 // Compress an input buffer with LZO1X
-func Compress(in []byte) (out []byte) {
+func Compress1X(in []byte) (out []byte) {
 	var t int
 
 	in_len := len(in)

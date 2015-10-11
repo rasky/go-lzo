@@ -66,7 +66,7 @@ func copyMatch(out *[]byte, m_pos int, n int) {
 }
 
 // Decompress an input compress with LZO1X
-func Decompress(in io.Reader, in_len int) (out []byte, err error) {
+func Decompress1X(in io.Reader, in_len int) (out []byte, err error) {
 	var ip byte
 	var t, m_pos int
 	out = make([]byte, 0, in_len)
