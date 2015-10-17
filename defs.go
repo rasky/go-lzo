@@ -5,6 +5,7 @@ const (
 	m2_MAX_OFFSET = 0x0800
 	m3_MAX_OFFSET = 0x4000
 	m4_MAX_OFFSET = 0xbfff
+	mX_MAX_OFFSET = m1_MAX_OFFSET + m2_MAX_OFFSET
 
 	m1_MIN_LEN = 2
 	m1_MAX_LEN = 2
