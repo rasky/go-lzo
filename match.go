@@ -16,6 +16,9 @@ func (ctx *compressor) findMatch(s *swd, thislen uint, skip uint) {
 		s.accept(thislen - skip)
 		ctx.textsize += thislen - skip + 1
 	} else {
+		if thislen > 1 {
+			panic("assert: findMatch: invalid thislen")
+		}
 		ctx.textsize += thislen - skip
 	}
 
@@ -89,7 +92,7 @@ func (ctx *compressor) assertMatch(s *swd, mlen, moff int) {
 		panic("assertMatch: invalid mlen")
 	}
 	if moff <= ctx.bp {
-		if ctx.bp+moff+mlen >= ctx.ip {
+		if ctx.bp-moff+mlen >= ctx.ip {
 			panic("assertMatch: invalid bp")
 		}
 		assertMemcmp(ctx.in[ctx.bp:], ctx.in[ctx.bp-moff:], mlen)

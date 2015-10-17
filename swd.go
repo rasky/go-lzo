@@ -137,13 +137,13 @@ func (s *swd) init() {
 		panic("assert: swd.init: invalid ip")
 	}
 
-	s.Look = uint(len(s.ctx.in)) - 1 // FIXME
+	s.Look = uint(len(s.ctx.in)) - s.ip
 	if s.Look > 0 {
 		if s.Look > s.SwdF {
 			s.Look = s.SwdF
 		}
 		copy(s.b[s.ip:], s.ctx.in[:s.Look])
-		s.ctx.in = s.ctx.in[s.Look:]
+		s.ctx.ip += int(s.Look)
 		s.ip += s.Look
 	}
 
@@ -179,7 +179,7 @@ func (s *swd) getbyte() {
 			s.bwrap[s.ip] = byte(c)
 		}
 	} else {
-		if s.Look >= 0 {
+		if s.Look > 0 {
 			s.Look--
 		}
 		s.b[s.ip] = 0
@@ -227,7 +227,7 @@ func (s *swd) accept(n uint) {
 }
 
 func (s *swd) search(node uint, cnt uint) {
-	if s.MLen < 0 {
+	if s.MLen <= 0 {
 		panic("assert: search: invalid mlen")
 	}
 
@@ -328,8 +328,8 @@ func (s *swd) findbest() {
 	key := head3(s.b[s.bp:])
 	node := s.gethead3(key)
 	s.succ3[s.bp] = node
-	s.llen3[key]++
 	cnt := uint(s.llen3[key])
+	s.llen3[key]++
 	if cnt > s.SwdN+s.SwdF {
 		panic("swd: findbest: invalid llen3")
 	}

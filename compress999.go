@@ -91,12 +91,12 @@ func (ctx *compressor) codeMatch(out []byte, mlen int, moff int) []byte {
 		if mlen < 3 {
 			panic("codeMatch: default: invalid mlen")
 		}
-		if moff <= 0x400 || moff >= 0xc000 {
-			panic("codeMatch: deafult: invalid moff")
+		if moff <= 0x4000 || moff >= 0xc000 {
+			panic("codeMatch: default: invalid moff")
 		}
 		moff -= 0x4000
 		k := (moff & 0x4000) >> 11
-		if mlen < m4_MAX_LEN {
+		if mlen <= m4_MAX_LEN {
 			out = append(out, byte(m4_MARKER|k|(mlen-2)))
 		} else {
 			mlen -= m4_MAX_LEN
@@ -342,7 +342,7 @@ func compress999(in []byte, p parms) []byte {
 				continue
 			}
 			if swd.UseBestOff {
-				mlen, moff = ctx.betterMatch(&swd, ctx.mlen, ctx.moff)
+				ctx.mlen, ctx.moff = ctx.betterMatch(&swd, ctx.mlen, ctx.moff)
 			}
 			l2 := ctx.lenOfCodedMatch(ctx.mlen, ctx.moff, lit+ahead)
 			if l2 == 0 {
