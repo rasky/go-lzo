@@ -20,7 +20,7 @@ func compress(in []byte) (out []byte, sz int) {
 	var m_off int
 	in_len := len(in)
 	ip_len := in_len - m2_MAX_LEN - 5
-	dict := make([]int, 1<<d_BITS)
+	dict := make([]int32, 1<<d_BITS)
 	ii := 0
 	ip := 4
 	for {
@@ -58,7 +58,7 @@ func compress(in []byte) (out []byte, sz int) {
 		}
 
 	literal:
-		dict[dindex] = ip + 1
+		dict[dindex] = int32(ip + 1)
 		ip += 1 + (ip-ii)>>5
 		if ip >= ip_len {
 			break
@@ -66,7 +66,7 @@ func compress(in []byte) (out []byte, sz int) {
 		continue
 
 	match:
-		dict[dindex] = ip + 1
+		dict[dindex] = int32(ip + 1)
 		if ip != ii {
 			t := ip - ii
 			if t <= 3 {
