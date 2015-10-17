@@ -49,7 +49,7 @@ func testCorpus(t *testing.T, arch string, cmpfunc func([]byte) []byte) (tdata i
 		t.Logf("File: %-20s Size: %-10v Compressed: %-10v Factor %0.1f%%", head.Name,
 			len(data), len(cmp), float32(len(data)-len(cmp))*100/float32(len(data)))
 
-		data2, err := Decompress1X(bytes.NewReader(cmp), len(cmp))
+		data2, err := Decompress1X(bytes.NewReader(cmp), len(cmp), len(data))
 		if err != nil {
 			t.Error(err)
 			continue
