@@ -34,7 +34,6 @@ type swd struct {
 	bestPos [cSWD_BEST_OFF]uint
 
 	// Private
-	dict      []byte
 	ip        uint // input pointer (lookahead)
 	bp        uint // buffer pointer
 	rp        uint // remove pointer
@@ -70,26 +69,6 @@ func (s *swd) gethead3(key uint) uint16 {
 	return s.head3[key]
 }
 
-func (s *swd) insertNode(node uint, len uint) {
-	s.nodecount = s.SwdN - len
-	s.firstrp = node
-	for i := uint(0); i < len; i++ {
-		key := head3(s.b[node:])
-		s.succ3[node] = s.gethead3(key)
-		s.head3[key] = uint16(node)
-		s.best3[node] = uint16(s.SwdF + 1)
-		s.llen3[key]++
-		if uint(s.llen3[key]) > s.SwdN {
-			panic("assert: swd.insertNode: invalid llen3")
-		}
-
-		key = head2(s.b[node:])
-		s.head2[key] = uint16(node)
-
-		node++
-	}
-}
-
 func (s *swd) removeNode(node uint) {
 	if s.nodecount == 0 {
 		key := head3(s.b[node:])
@@ -110,10 +89,6 @@ func (s *swd) removeNode(node uint) {
 	s.nodecount--
 }
 
-func (s *swd) exit() {
-	panic("exit")
-}
-
 func (s *swd) init() {
 	s.SwdN = cSWD_N
 	s.SwdF = cSWD_F
@@ -130,7 +105,6 @@ func (s *swd) init() {
 	}
 
 	s.ip = 0
-	//s.initdict()
 	s.bp = s.ip
 	s.firstrp = s.ip
 	if s.ip+s.SwdF > s.bsize {
@@ -149,10 +123,6 @@ func (s *swd) init() {
 
 	if s.ip == s.bsize {
 		s.ip = 0
-	}
-
-	if s.Look >= 2 && len(s.dict) > 0 {
-		s.insertNode(0, uint(len(s.dict)))
 	}
 
 	s.rp = s.firstrp

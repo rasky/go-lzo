@@ -36,7 +36,6 @@ func (ctx *compressor) findMatch(s *swd, thislen uint, skip uint) {
 	if s.BChar < 0 {
 		ctx.look = 0
 		ctx.mlen = 0
-		s.exit()
 	} else {
 		ctx.look = s.Look + 1
 	}
@@ -97,21 +96,6 @@ func (ctx *compressor) assertMatch(s *swd, mlen, moff int) {
 		}
 		assertMemcmp(ctx.in[ctx.bp:], ctx.in[ctx.bp-moff:], mlen)
 	} else {
-		if len(s.dict) == 0 {
-			panic("assertMatch: invalid dict")
-		}
-		doff := moff - ctx.bp
-		if doff > len(s.dict) {
-			panic("assertMatch: invalid doff")
-		}
-		if mlen > doff {
-			assertMemcmp(ctx.in[ctx.bp:], s.dict[len(s.dict)-doff:], doff)
-			if mlen-doff >= ctx.ip {
-				panic("assertMatch: invalid ip")
-			}
-			assertMemcmp(ctx.in[ctx.bp+doff:], ctx.in, mlen-doff)
-		} else {
-			assertMemcmp(ctx.in[ctx.bp:], s.dict[len(s.dict)-doff:], mlen)
-		}
+		panic("dict should not exit")
 	}
 }
