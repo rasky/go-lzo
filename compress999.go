@@ -78,7 +78,7 @@ func (ctx *compressor) codeMatch(out []byte, mlen int, moff int) []byte {
 			panic("codeMatch: m3max: invalid mlen")
 		}
 		moff -= 1
-		if mlen < m3_MAX_LEN {
+		if mlen <= m3_MAX_LEN {
 			out = append(out, byte(m3_MARKER|(mlen-2)))
 		} else {
 			mlen -= m3_MAX_LEN
@@ -115,7 +115,7 @@ func (ctx *compressor) codeMatch(out []byte, mlen int, moff int) []byte {
 func (ctx *compressor) storeRun(out []byte, ii int, t int) []byte {
 	ctx.litBytes += t
 
-	if len(out) == 0 && t < 238 {
+	if len(out) == 0 && t <= 238 {
 		out = append(out, byte(17+t))
 	} else if t <= 3 {
 		out[len(out)-2] |= byte(t)
@@ -142,7 +142,7 @@ func (ctx *compressor) codeRun(out []byte, ii int, lit int, mlen int) []byte {
 		ctx.r1mlen = mlen
 		ctx.r1lit = lit
 	} else {
-		if mlen < 2 {
+		if mlen < 3 {
 			panic("codeRun: invalid mlen")
 		}
 		ctx.r1mlen = 0
@@ -160,7 +160,7 @@ func (ctx *compressor) lenOfCodedMatch(mlen int, moff int, lit int) int {
 			return 2
 		}
 		return 0
-	case mlen <= m2_MAX_LEN && moff < m2_MAX_OFFSET:
+	case mlen <= m2_MAX_LEN && moff <= m2_MAX_OFFSET:
 		return 2
 	case mlen == m2_MIN_LEN && moff <= mX_MAX_OFFSET && lit >= 4:
 		return 2
@@ -194,7 +194,7 @@ func (ctx *compressor) lenOfCodedMatch(mlen int, moff int, lit int) int {
 func (ctx *compressor) minGain(ahead int,
 	lit1, lit2 int, l1, l2, l3 int) int {
 
-	if ahead == 0 {
+	if ahead <= 0 {
 		panic("minGain: invalid ahead")
 	}
 	mingain := int(ahead)
@@ -209,7 +209,7 @@ func (ctx *compressor) minGain(ahead int,
 	}
 
 	mingain += int((l2 - l1) * 2)
-	if l3 > 0 {
+	if l3 != 0 {
 		mingain -= int((ahead - l3) * 2)
 	}
 	if mingain < 0 {
