@@ -89,3 +89,27 @@ func Test1(t *testing.T) {
 func Test999(t *testing.T) {
 	testCorpora(t, Compress1X999)
 }
+
+func BenchmarkDecomp(b *testing.B) {
+	f, err := os.Open("testdata/large.tar.gz")
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer f.Close()
+
+	gz, err := gzip.NewReader(f)
+	if err != nil {
+		b.Error(err)
+		return
+	}
+	defer gz.Close()
+
+	var buf bytes.Buffer
+	io.Copy(&buf, gz)
+
+	cmp := Compress1X(buf.Bytes())
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		Decompress1X(bytes.NewReader(cmp), len(cmp), buf.Len())
+	}
+}
