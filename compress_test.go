@@ -87,5 +87,5 @@ func Test1(t *testing.T) {
 }
 
 func Test999(t *testing.T) {
-	testCorpora(t, Compress999X)
+	testCorpora(t, Compress1X999)
 }

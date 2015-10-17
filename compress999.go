@@ -395,7 +395,7 @@ func compress999(in []byte, p parms) []byte {
 	return out
 }
 
-func Compress999X(in []byte) []byte {
+func Compress1X999(in []byte) []byte {
 	return compress999(in, parms{
 		TryLazy:  2,
 		GoodLen:  cSWD_F,
