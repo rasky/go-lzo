@@ -59,7 +59,7 @@ func compress(in []byte) (out []byte, sz int) {
 
 	literal:
 		dict[dindex] = ip + 1
-		ip++
+		ip += 1 + (ip-ii)>>5
 		if ip >= ip_len {
 			break
 		}
