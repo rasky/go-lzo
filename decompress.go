@@ -19,7 +19,9 @@ type reader struct {
 }
 
 func newReader(r io.Reader, inlen int) *reader {
-	return &reader{r: r, len: inlen}
+	in := &reader{r: r, len: inlen}
+	in.Rebuffer0()
+	return in
 }
 
 func (in *reader) Rebuffer0() {
@@ -136,7 +138,6 @@ func Decompress1X(r io.Reader, in_len int, out_len int) (out []byte, err error) 
 	out = make([]byte, 0, out_len)
 
 	in := newReader(r, in_len)
-	in.Rebuffer()
 	ip := in.ReadU8()
 	if ip > 17 {
 		t = int(ip) - 17
@@ -149,10 +150,6 @@ func Decompress1X(r io.Reader, in_len int, out_len int) (out []byte, err error) 
 	}
 
 begin_loop:
-	if in.Err != nil {
-		err = in.Err
-		return
-	}
 	t = int(ip)
 	if t >= 16 {
 		goto match
@@ -183,6 +180,10 @@ first_literal_run:
 
 match:
 	in.Rebuffer()
+	if in.Err != nil {
+		err = in.Err
+		return
+	}
 	t = int(ip)
 	last2 = ip
 	if t >= 64 {
