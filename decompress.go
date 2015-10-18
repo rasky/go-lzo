@@ -3,6 +3,7 @@ package lzo
 import (
 	"errors"
 	"io"
+	"runtime"
 )
 
 var (
@@ -19,24 +20,12 @@ type reader struct {
 }
 
 func newReader(r io.Reader, inlen int) *reader {
+	if inlen == 0 {
+		inlen = -1
+	}
 	in := &reader{r: r, len: inlen}
-	in.Rebuffer0()
+	in.Rebuffer()
 	return in
-}
-
-func (in *reader) Rebuffer0() {
-	in.cur = in.buf[:]
-	cur := in.cur[:]
-	if len(cur) > in.len {
-		cur = cur[:in.len]
-	}
-	n, err := in.r.Read(cur)
-	if err != nil {
-		in.Err = err
-	} else {
-		in.cur = in.cur[:n]
-		in.len -= n
-	}
 }
 
 // Read more data from the underlying reader and put it into the buffer.
@@ -56,15 +45,21 @@ func (in *reader) Rebuffer() {
 	copy(in.cur, rb)
 
 	cur := in.cur[len(rb):]
-	if len(cur) > in.len {
+	if in.len >= 0 && len(cur) > in.len {
 		cur = cur[:in.len]
 	}
 	n, err := in.r.Read(cur)
 	if err != nil {
-		in.Err = err
-		in.cur[0] = 0xFF // break out of multi loop, if any
-	} else {
-		in.cur = in.cur[:len(rb)+n]
+		// If EOF is returned, treat it as error only if there are no further
+		// bytes in the window. Otherwise, let's postpone because those bytes
+		// could contain the terminator.
+		if err != io.EOF || len(rb) == 0 {
+			in.Err = err
+			in.cur = nil
+		}
+	}
+	in.cur = in.cur[:len(rb)+n]
+	if in.len >= 0 {
 		in.len -= n
 	}
 }
@@ -79,7 +74,7 @@ func (in *reader) ReadAppend(out *[]byte, n int) {
 		in.cur = in.cur[m:]
 		n -= m
 		if len(in.cur) == 0 {
-			in.Rebuffer0()
+			in.Rebuffer()
 		}
 	}
 	return
@@ -110,7 +105,12 @@ func (in *reader) ReadMulti(base int) (b int) {
 				return
 			}
 		}
-		in.Rebuffer0()
+		in.cur = in.cur[0:0]
+		in.Rebuffer()
+		if len(in.cur) == 0 {
+			in.Err = io.EOF
+			return
+		}
 	}
 }
 
@@ -127,17 +127,44 @@ func copyMatch(out *[]byte, m_pos int, n int) {
 	}
 }
 
-// Decompress an input compressed with LZO1X. If r does not also implement
-// io.ByteReader, the decompressor may read more data than necessary from r.
-// out_len is optional; if it's not zero, it is used as a hint to
-// preallocate the output buffer.
-func Decompress1X(r io.Reader, in_len int, out_len int) (out []byte, err error) {
+// Decompress an input compressed with LZO1X.
+//
+// LZO1X has a stream terminator marker, so the decompression will always stop
+// when this marker is found.
+//
+// If inLen is not zero, it is expected to match the length of the compressed
+// input stream, and it is used to limit reads from the underlying reader; if
+// inLen is smaller than the real stream, the decompression will abort with an
+// error; if inLen is larger than the real stream, or if it is zero, the
+// decompression will succeed but more bytes than necessary might be read
+// from the underlying reader. If the reader returns EOF before the termination
+// marker is found, the decompression aborts and EOF is returned.
+//
+// outLen is optional; if it's not zero, it is used as a hint to preallocate the
+// output buffer to increase performance of the decompression.
+func Decompress1X(r io.Reader, inLen int, outLen int) (out []byte, err error) {
 	var t, m_pos int
 	var last2 byte
 
-	out = make([]byte, 0, out_len)
+	defer func() {
+		// To gain performance, we don't do any bounds checking while reading
+		// the input, so if the decompressor reads past the end of the input
+		// stream, a runtime error is raised. This saves about 7% of performance
+		// as the reading functions are very hot in the decompressor.
+		if r := recover(); r != nil {
+			if re, ok := r.(runtime.Error); ok {
+				if re.Error() == "runtime error: index out of range" {
+					err = io.EOF
+					return
+				}
+			}
+			panic(r)
+		}
+	}()
 
-	in := newReader(r, in_len)
+	out = make([]byte, 0, outLen)
+
+	in := newReader(r, inLen)
 	ip := in.ReadU8()
 	if ip > 17 {
 		t = int(ip) - 17
@@ -214,7 +241,7 @@ match:
 		v16 := in.ReadU16()
 		m_pos -= v16 >> 2
 		if m_pos == len(out) {
-			// fmt.Println("FINEEEEE", t, v16, m_pos)
+			// fmt.Println("END", t, v16, m_pos)
 			return
 		}
 		m_pos -= 0x4000

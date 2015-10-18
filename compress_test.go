@@ -82,12 +82,42 @@ func testCorpora(t *testing.T, cmpfunc func([]byte) []byte) {
 
 }
 
+func TestDecompInlen(t *testing.T) {
+	data := bytes.Repeat([]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, 1000)
+	cmp := Compress1X(data)
+
+	for i := 1; i < 16; i++ {
+		for j := -16; j < 16; j++ {
+			_, err := Decompress1X(io.LimitReader(bytes.NewReader(cmp), int64(len(cmp)-i)), len(cmp)+j, 0)
+			if err != io.EOF {
+				t.Error("EOF expected for truncated input, found:", err)
+			}
+		}
+	}
+
+	for j := -16; j < 16; j++ {
+		data2, err := Decompress1X(bytes.NewReader(cmp), len(cmp)+j, 0)
+		if j < 0 && err != io.EOF {
+			t.Error("EOF expected for truncated input, found:", err)
+		}
+		if j >= 0 {
+			if err != nil {
+				t.Error("error for normal decompression:", err, j)
+			} else if !reflect.DeepEqual(data, data2) {
+				t.Error("data doesn't match after decompression")
+			}
+		}
+	}
+}
+
 func Test1(t *testing.T) {
 	testCorpora(t, Compress1X)
 }
 
 func Test999(t *testing.T) {
-	testCorpora(t, Compress1X999)
+	if !testing.Short() {
+		testCorpora(t, Compress1X999)
+	}
 }
 
 func BenchmarkComp(b *testing.B) {
