@@ -1,7 +1,6 @@
 package lzo
 
 import (
-	"bufio"
 	"errors"
 	"io"
 )
@@ -12,57 +11,67 @@ var (
 )
 
 type reader struct {
-	io.ByteReader
-	Last1, Last2 byte
+	r   io.Reader
+	len int
+	buf [4096]byte
+	cur []byte
+	Err error
 }
 
-func newReader(r io.Reader) *reader {
-	// If ByteReader is not implemented, wrap it in a bufio
-	in, ok := r.(io.ByteReader)
-	if !ok {
-		in = bufio.NewReader(r)
+func newReader(r io.Reader, inlen int) *reader {
+	return &reader{r: r, len: inlen}
+}
+
+func (in *reader) rebuffer() {
+	if in.len > len(in.buf) {
+		in.cur = in.buf[:]
+	} else {
+		in.cur = in.buf[:in.len]
 	}
-	return &reader{ByteReader: in}
+	n, err := in.r.Read(in.cur)
+	if err != nil {
+		in.Err = err
+	} else {
+		in.cur = in.cur[:n]
+		in.len -= n
+	}
 }
 
-func (in *reader) ReadAppend(out *[]byte, n int) (err error) {
-	var ch byte
-	for i := 0; i < n; i++ {
-		ch, err = in.ReadByte()
-		if err != nil {
-			return
+func (in *reader) ReadAppend(out *[]byte, n int) {
+	for n > 0 {
+		if len(in.cur) == 0 {
+			in.rebuffer()
 		}
-		*out = append(*out, ch)
+		m := len(in.cur)
+		if m > n {
+			m = n
+		}
+		*out = append(*out, in.cur[:m]...)
+		in.cur = in.cur[m:]
+		n -= m
 	}
 	return
 }
 
-func (in *reader) ReadByte() (b byte, err error) {
-	b, err = in.ByteReader.ReadByte()
-	in.Last2 = in.Last1
-	in.Last1 = b
-	return
+func (in *reader) ReadU8() byte {
+	if len(in.cur) == 0 {
+		in.rebuffer()
+	}
+
+	ch := in.cur[0]
+	in.cur = in.cur[1:]
+	return ch
 }
 
-func (in *reader) ReadU16() (b int, err error) {
-	in.Last2, err = in.ByteReader.ReadByte()
-	if err != nil {
-		return
-	}
-	in.Last1, err = in.ByteReader.ReadByte()
-	if err != nil {
-		return
-	}
-	b = int(in.Last2) + int(in.Last1)*256
-	return
+func (in *reader) ReadU16() int {
+	b0 := in.ReadU8()
+	b1 := in.ReadU8()
+	return int(b0) + int(b1)<<8
 }
 
-func (in *reader) ReadMulti(base int) (b int, err error) {
-	var v byte
+func (in *reader) ReadMulti(base int) (b int) {
 	for {
-		if v, err = in.ReadByte(); err != nil {
-			return
-		}
+		v := in.ReadU8()
 		if v == 0 {
 			b += 255
 		} else {
@@ -90,54 +99,47 @@ func copyMatch(out *[]byte, m_pos int, n int) {
 // out_len is optional; if it's not zero, it is used as a hint to
 // preallocate the output buffer.
 func Decompress1X(r io.Reader, in_len int, out_len int) (out []byte, err error) {
-	var ip byte
 	var t, m_pos int
-
-	in := newReader(r)
+	var last2 byte
 
 	out = make([]byte, 0, out_len)
-	if ip, err = in.ReadByte(); err != nil {
-		return
-	}
+
+	in := newReader(r, in_len)
+	ip := in.ReadU8()
 	if ip > 17 {
 		t = int(ip) - 17
 		if t < 4 {
 			goto match_next
 		}
-		if err = in.ReadAppend(&out, t); err != nil {
-			return
-		}
+		in.ReadAppend(&out, t)
 		// fmt.Println("begin:", string(out))
 		goto first_literal_run
 	}
 
 begin_loop:
+	if in.Err != nil {
+		err = in.Err
+		return
+	}
 	t = int(ip)
 	if t >= 16 {
 		goto match
 	}
 	if t == 0 {
-		if t, err = in.ReadMulti(15); err != nil {
-			return
-		}
+		t = in.ReadMulti(15)
 	}
-	if err = in.ReadAppend(&out, t+3); err != nil {
-		return
-	}
+	in.ReadAppend(&out, t+3)
 	// fmt.Println("readappend", t+3, string(out[len(out)-t-3:]))
 first_literal_run:
-	if ip, err = in.ReadByte(); err != nil {
-		return
-	}
+	ip = in.ReadU8()
+	last2 = ip
 	t = int(ip)
 	if t >= 16 {
 		goto match
 	}
 	m_pos = len(out) - (1 + m2_MAX_OFFSET)
 	m_pos -= t >> 2
-	if ip, err = in.ReadByte(); err != nil {
-		return
-	}
+	ip = in.ReadU8()
 	m_pos -= int(ip) << 2
 	// fmt.Println("m_pos flr", m_pos, len(out), "\n", string(out))
 	if m_pos < 0 {
@@ -149,12 +151,11 @@ first_literal_run:
 
 match:
 	t = int(ip)
+	last2 = ip
 	if t >= 64 {
 		m_pos = len(out) - 1
 		m_pos -= (t >> 2) & 7
-		if ip, err = in.ReadByte(); err != nil {
-			return
-		}
+		ip = in.ReadU8()
 		m_pos -= int(ip) << 3
 		// fmt.Println("m_pos t64", m_pos, t, int(ip))
 		t = (t >> 5) - 1
@@ -162,43 +163,33 @@ match:
 	} else if t >= 32 {
 		t &= 31
 		if t == 0 {
-			if t, err = in.ReadMulti(31); err != nil {
-				return
-			}
+			t = in.ReadMulti(31)
 		}
 		m_pos = len(out) - 1
-		var v16 int
-		if v16, err = in.ReadU16(); err != nil {
-			return
-		}
+		v16 := in.ReadU16()
 		m_pos -= v16 >> 2
+		last2 = byte(v16 & 0xFF)
 		// fmt.Println("m_pos t32", m_pos)
 	} else if t >= 16 {
 		m_pos = len(out)
 		m_pos -= (t & 8) << 11
 		t &= 7
 		if t == 0 {
-			if t, err = in.ReadMulti(7); err != nil {
-				return
-			}
+			t = in.ReadMulti(7)
 		}
-		var v16 int
-		if v16, err = in.ReadU16(); err != nil {
-			return
-		}
+		v16 := in.ReadU16()
 		m_pos -= v16 >> 2
 		if m_pos == len(out) {
 			// fmt.Println("FINEEEEE", t, v16, m_pos)
 			return
 		}
 		m_pos -= 0x4000
+		last2 = byte(v16 & 0xFF)
 		// fmt.Println("m_pos t16", m_pos)
 	} else {
 		m_pos = len(out) - 1
 		m_pos -= t >> 2
-		if ip, err = in.ReadByte(); err != nil {
-			return
-		}
+		ip = in.ReadU8()
 		m_pos -= int(ip) << 2
 		// fmt.Println("m_pos tX", m_pos)
 		copyMatch(&out, m_pos, 2)
@@ -213,23 +204,17 @@ copy_match:
 	copyMatch(&out, m_pos, t+2)
 
 match_done:
-	t = int(in.Last2) & 3
+	t = int(last2 & 3)
 	if t == 0 {
 		goto match_end
 	}
 match_next:
 	// fmt.Println("read append finale:", t)
-	if err = in.ReadAppend(&out, t); err != nil {
-		return
-	}
-	if ip, err = in.ReadByte(); err != nil {
-		return
-	}
+	in.ReadAppend(&out, t)
+	ip = in.ReadU8()
 	goto match
 
 match_end:
-	if ip, err = in.ReadByte(); err != nil {
-		return
-	}
+	ip = in.ReadU8()
 	goto begin_loop
 }
