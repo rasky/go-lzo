@@ -22,13 +22,13 @@ func newReader(r io.Reader, inlen int) *reader {
 	return &reader{r: r, len: inlen}
 }
 
-func (in *reader) rebuffer() {
-	if in.len > len(in.buf) {
-		in.cur = in.buf[:]
-	} else {
-		in.cur = in.buf[:in.len]
+func (in *reader) Rebuffer0() {
+	in.cur = in.buf[:]
+	cur := in.cur[:]
+	if len(cur) > in.len {
+		cur = cur[:in.len]
 	}
-	n, err := in.r.Read(in.cur)
+	n, err := in.r.Read(cur)
 	if err != nil {
 		in.Err = err
 	} else {
@@ -37,11 +37,38 @@ func (in *reader) rebuffer() {
 	}
 }
 
+// Read more data from the underlying reader and put it into the buffer.
+// Also makes sure there is always at least 32 bytes in the buffer, so that
+// in the main loop we can avoid checking for the end of buffer.
+func (in *reader) Rebuffer() {
+	const RBUF_WND = 32
+	var rbuf [RBUF_WND]byte
+
+	if len(in.cur) > RBUF_WND || in.len == 0 {
+		return
+	}
+
+	rb := rbuf[:len(in.cur)]
+	copy(rb, in.cur)
+	in.cur = in.buf[:]
+	copy(in.cur, rb)
+
+	cur := in.cur[len(rb):]
+	if len(cur) > in.len {
+		cur = cur[:in.len]
+	}
+	n, err := in.r.Read(cur)
+	if err != nil {
+		in.Err = err
+		in.cur[0] = 0xFF // break out of multi loop, if any
+	} else {
+		in.cur = in.cur[:len(rb)+n]
+		in.len -= n
+	}
+}
+
 func (in *reader) ReadAppend(out *[]byte, n int) {
 	for n > 0 {
-		if len(in.cur) == 0 {
-			in.rebuffer()
-		}
 		m := len(in.cur)
 		if m > n {
 			m = n
@@ -49,35 +76,39 @@ func (in *reader) ReadAppend(out *[]byte, n int) {
 		*out = append(*out, in.cur[:m]...)
 		in.cur = in.cur[m:]
 		n -= m
+		if len(in.cur) == 0 {
+			in.Rebuffer0()
+		}
 	}
 	return
 }
 
-func (in *reader) ReadU8() byte {
-	if len(in.cur) == 0 {
-		in.rebuffer()
-	}
-
-	ch := in.cur[0]
+func (in *reader) ReadU8() (ch byte) {
+	ch = in.cur[0]
 	in.cur = in.cur[1:]
-	return ch
+	return
 }
 
 func (in *reader) ReadU16() int {
-	b0 := in.ReadU8()
-	b1 := in.ReadU8()
+	b0 := in.cur[0]
+	b1 := in.cur[1]
+	in.cur = in.cur[2:]
 	return int(b0) + int(b1)<<8
 }
 
 func (in *reader) ReadMulti(base int) (b int) {
 	for {
-		v := in.ReadU8()
-		if v == 0 {
-			b += 255
-		} else {
-			b += int(v) + base
-			return
+		for i := 0; i < len(in.cur); i++ {
+			v := in.cur[i]
+			if v == 0 {
+				b += 255
+			} else {
+				b += int(v) + base
+				in.cur = in.cur[i+1:]
+				return
+			}
 		}
+		in.Rebuffer0()
 	}
 }
 
@@ -105,6 +136,7 @@ func Decompress1X(r io.Reader, in_len int, out_len int) (out []byte, err error) 
 	out = make([]byte, 0, out_len)
 
 	in := newReader(r, in_len)
+	in.Rebuffer()
 	ip := in.ReadU8()
 	if ip > 17 {
 		t = int(ip) - 17
@@ -150,6 +182,7 @@ first_literal_run:
 	goto match_done
 
 match:
+	in.Rebuffer()
 	t = int(ip)
 	last2 = ip
 	if t >= 64 {
