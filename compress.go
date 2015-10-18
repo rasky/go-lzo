@@ -1,12 +1,5 @@
 package lzo
 
-func dx2(p []byte, s1, s2 uint) int {
-	return (((int(p[2]) << s2) ^ int(p[1])) << s1) ^ int(p[0])
-}
-func dx3(p []byte, s1, s2, s3 uint) int {
-	return (((((int(p[3]) << s3) ^ int(p[2])) << s2) ^ int(p[1])) << s1) ^ int(p[0])
-}
-
 func appendMulti(out []byte, t int) []byte {
 	for t > 255 {
 		out = append(out, 0)
@@ -24,7 +17,11 @@ func compress(in []byte) (out []byte, sz int) {
 	ii := 0
 	ip := 4
 	for {
-		dindex := ((0x21 * dx3(in[ip:], 5, 5, 6)) >> 5) & d_MASK
+		key := int(in[ip+3])
+		key = (key << 6) ^ int(in[ip+2])
+		key = (key << 5) ^ int(in[ip+1])
+		key = (key << 5) ^ int(in[ip+0])
+		dindex := ((0x21 * key) >> 5) & d_MASK
 		m_pos := int(dict[dindex]) - 1
 		if m_pos < 0 {
 			goto literal
