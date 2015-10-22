@@ -22,7 +22,7 @@ These are the benchmarks obtained running the testsuite over the Canterbury
 corpus for the available compressor levels:
 
 Compressor | Level | Original | Compressed | Factor | Time | Speed
-------------------------------------------------------------------
+-----------|-------|----------|------------|--------|------|------
 LZO1X-1   | - | 18521760 | 8957481 | 51.6% | 0.16s | 109MiB/s
 LZO1X-999 | 1 | 18521760 | 8217347 | 55.6% | 1.38s | 13MiB/s
 LZO1X-999 | 2 | 18521760 | 7724879 | 58.3% | 1.50s | 12MiB/s
