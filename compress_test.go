@@ -4,14 +4,41 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 )
 
-func testCorpus(t *testing.T, arch string, cmpfunc func([]byte) []byte) (tdata int, tcmp int) {
+func logn(n, b float64) float64 {
+	return math.Log(n) / math.Log(b)
+}
+
+func humanateBytes(s uint64, base float64, sizes []string) string {
+	if s < 10 {
+		return fmt.Sprintf("%dB", s)
+	}
+	e := math.Floor(logn(float64(s), base))
+	suffix := sizes[int(e)]
+	val := math.Floor(float64(s)/math.Pow(base, e)*10+0.5) / 10
+	f := "%.0f%s"
+	if val < 10 {
+		f = "%.1f%s"
+	}
+
+	return fmt.Sprintf(f, val, suffix)
+}
+
+func IBytes(s uint64) string {
+	sizes := []string{"B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB"}
+	return humanateBytes(s, 1024, sizes)
+}
+
+func testCorpus(t *testing.T, arch string, cmpfunc func([]byte) []byte) (tdata int, tcmp int, tt time.Duration) {
 	t.Log("Test corpus:", arch)
 	f, err := os.Open(arch)
 	if err != nil {
@@ -45,9 +72,11 @@ func testCorpus(t *testing.T, arch string, cmpfunc func([]byte) []byte) (tdata i
 			return
 		}
 
+		t0 := time.Now()
 		cmp := cmpfunc(data)
-		t.Logf("File: %-20s Size: %-10v Compressed: %-10v Factor %0.1f%%", head.Name,
-			len(data), len(cmp), float32(len(data)-len(cmp))*100/float32(len(data)))
+		tt += time.Now().Sub(t0)
+		// t.Logf("File: %-20s Size: %-10v Compressed: %-10v Factor %0.1f%%", head.Name,
+		// 	len(data), len(cmp), float32(len(data)-len(cmp))*100/float32(len(data)))
 
 		data2, err := Decompress1X(bytes.NewReader(cmp), len(cmp), len(data))
 		if err != nil {
@@ -62,6 +91,9 @@ func testCorpus(t *testing.T, arch string, cmpfunc func([]byte) []byte) (tdata i
 		tdata += len(data)
 		tcmp += len(cmp)
 	}
+	t.Logf("Total corpus stats: Size: %v, Compressed: %v, Factor: %0.1f%%, Elapsed: %v, Speed: %v/s",
+		tdata, tcmp, float32(tdata-tcmp)*100/float32(tdata),
+		tt, IBytes(uint64(float64(tdata)/tt.Seconds())))
 	return
 }
 
@@ -71,14 +103,17 @@ func testCorpora(t *testing.T, cmpfunc func([]byte) []byte) {
 		t.Fatal(err)
 	}
 	tdata, tcmp := 0, 0
+	var tt time.Duration
 	for _, arch := range archs {
-		d, c := testCorpus(t, arch, cmpfunc)
+		d, c, t := testCorpus(t, arch, cmpfunc)
 		tdata += d
 		tcmp += c
+		tt += t
 	}
 
-	t.Logf("Final stats: Size: %v, Compressed: %v, Factor: %0.1f%%",
-		tdata, tcmp, float32(tdata-tcmp)*100/float32(tdata))
+	t.Logf("Total stats: Size: %v, Compressed: %v, Factor: %0.1f%%, Elapsed: %v, Speed: %v/s",
+		tdata, tcmp, float32(tdata-tcmp)*100/float32(tdata),
+		tt, IBytes(uint64(float64(tdata)/tt.Seconds())))
 
 }
 
@@ -115,8 +150,14 @@ func Test1(t *testing.T) {
 }
 
 func Test999(t *testing.T) {
-	if !testing.Short() {
-		testCorpora(t, Compress1X999)
+	maxlevel := 9
+	if testing.Short() {
+		maxlevel = 5
+	}
+	for i := 1; i <= maxlevel; i++ {
+		testCorpora(t, func(in []byte) []byte {
+			return Compress1X999Level(in, i)
+		})
 	}
 }
 
