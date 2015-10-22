@@ -395,13 +395,22 @@ func compress999(in []byte, p parms) []byte {
 	return out
 }
 
+var fixedLevels = [...]parms{
+	{0, 0, 0, 8, 4, 0},
+	{0, 0, 0, 16, 8, 0},
+	{0, 0, 0, 32, 16, 0},
+	{1, 4, 4, 16, 16, 0},
+	{1, 8, 16, 32, 32, 0},
+	{1, 8, 16, 128, 128, 0},
+	{2, 8, 32, 128, 256, 0},
+	{2, 32, 128, cSWD_F, 2048, 1},
+	{2, cSWD_F, cSWD_F, cSWD_F, 4096, 1},
+}
+
+func Compress1X999Level(in []byte, level int) []byte {
+	return compress999(in, fixedLevels[level-1])
+}
+
 func Compress1X999(in []byte) []byte {
-	return compress999(in, parms{
-		TryLazy:  2,
-		GoodLen:  cSWD_F,
-		MaxLazy:  cSWD_F,
-		NiceLen:  cSWD_F,
-		MaxChain: 4096,
-		Flags:    1,
-	})
+	return Compress1X999Level(in, 9)
 }
