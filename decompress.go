@@ -75,6 +75,10 @@ func (in *reader) ReadAppend(out *[]byte, n int) {
 		n -= m
 		if len(in.cur) == 0 {
 			in.Rebuffer()
+			if len(in.cur) == 0 {
+				in.Err = io.EOF
+				return
+			}
 		}
 	}
 	return
@@ -122,8 +126,8 @@ func copyMatch(out *[]byte, m_pos int, n int) {
 			m_pos++
 		}
 	} else {
+		// fmt.Println("copy match:", len(*out), m_pos, m_pos+n)
 		*out = append(*out, (*out)[m_pos:m_pos+n]...)
-		// fmt.Println("copy match:", string((*out)[m_pos:m_pos+n]))
 	}
 }
 
@@ -252,6 +256,10 @@ match:
 		m_pos -= t >> 2
 		ip = in.ReadU8()
 		m_pos -= int(ip) << 2
+		if m_pos < 0 {
+			err = LookBehindUnderrun
+			return
+		}
 		// fmt.Println("m_pos tX", m_pos)
 		copyMatch(&out, m_pos, 2)
 		goto match_done
