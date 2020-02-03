@@ -1,7 +1,7 @@
 # go-lzo
 
-[![Build status](https://travis-ci.org/rasky/go-lzo.svg)](https://travis-ci.org/rasky/go-lzo)
-[![Coverage Status](https://coveralls.io/repos/rasky/go-lzo/badge.svg?branch=master&service=github)](https://coveralls.io/github/rasky/go-lzo?branch=master)
+[![build](https://github.com/GetStream/go-lzo/workflows/build/badge.svg)](https://github.com/GetStream/go-lzo/actions)
+[![GoDoc](http://img.shields.io/badge/go-documentation-blue.svg?style=flat-square)](https://godoc.org/github.com/GetStream/go-lzo)
 
 Native LZO1X implementation in Golang
 
@@ -21,16 +21,15 @@ also changing license.
 These are the benchmarks obtained running the testsuite over the Canterbury
 corpus for the available compressor levels:
 
-Compressor | Level | Original | Compressed | Factor | Time | Speed
------------|-------|----------|------------|--------|------|------
-LZO1X-1   | - | 18521760 | 8957481 | 51.6% | 0.16s | 109MiB/s
-LZO1X-999 | 1 | 18521760 | 8217347 | 55.6% | 1.38s | 13MiB/s
-LZO1X-999 | 2 | 18521760 | 7724879 | 58.3% | 1.50s | 12MiB/s
-LZO1X-999 | 3 | 18521760 | 7384377 | 60.1% | 1.68s | 10MiB/s
-LZO1X-999 | 4 | 18521760 | 7266674 | 60.8% | 1.69s | 10MiB/s
-LZO1X-999 | 5 | 18521760 | 6979879 | 62.3% | 2.75s | 6.4MiB/s
-LZO1X-999 | 6 | 18521760 | 6938593 | 62.5% | 4.53s | 3.9MiB/s
-LZO1X-999 | 7 | 18521760 | 6905362 | 62.7% | 6.94s | 2.5MiB/s
-LZO1X-999 | 8 | 18521760 | 6713477 | 63.8% | 20.96s | 863KiB/s
-LZO1X-999 | 9 | 18521760 | 6712069 | 63.8% | 22.82s | 792KiB/s
-
+| Compressor | Level | Original | Compressed | Factor | Time   | Speed    |
+| ---------- | ----- | -------- | ---------- | ------ | ------ | -------- |
+| LZO1X-1    | -     | 18521760 | 8957481    | 51.6%  | 0.16s  | 109MiB/s |
+| LZO1X-999  | 1     | 18521760 | 8217347    | 55.6%  | 1.38s  | 13MiB/s  |
+| LZO1X-999  | 2     | 18521760 | 7724879    | 58.3%  | 1.50s  | 12MiB/s  |
+| LZO1X-999  | 3     | 18521760 | 7384377    | 60.1%  | 1.68s  | 10MiB/s  |
+| LZO1X-999  | 4     | 18521760 | 7266674    | 60.8%  | 1.69s  | 10MiB/s  |
+| LZO1X-999  | 5     | 18521760 | 6979879    | 62.3%  | 2.75s  | 6.4MiB/s |
+| LZO1X-999  | 6     | 18521760 | 6938593    | 62.5%  | 4.53s  | 3.9MiB/s |
+| LZO1X-999  | 7     | 18521760 | 6905362    | 62.7%  | 6.94s  | 2.5MiB/s |
+| LZO1X-999  | 8     | 18521760 | 6713477    | 63.8%  | 20.96s | 863KiB/s |
+| LZO1X-999  | 9     | 18521760 | 6712069    | 63.8%  | 22.82s | 792KiB/s |
