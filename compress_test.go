@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"math"
@@ -206,4 +207,24 @@ func BenchmarkDecomp(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		Decompress1X(bytes.NewReader(cmp), len(cmp), buf.Len())
 	}
+}
+
+// TestCompressMatchesLzopCommand verifies that this package compression output matches lzop(1) output.
+// And, ... it doesn't.
+func testCompressMatchesLzopCommand(t *testing.T) {
+	c := Compress1X(etchosts)
+	if !bytes.Equal(etchosts1X[0x32:], c) {
+		t.Fatalf("Got:\n%s\n want \n%s\n", hex.Dump(c), hex.Dump(etchosts1X[0x32:]))
+	}
+	// Well, atm, this package doesn't want to see the header.
+	c = c[0x32:]
+	d, err := Decompress1X(bytes.NewReader(c), 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !bytes.Equal(d, etchosts) {
+		t.Fatalf("Got:\n%s\n want \n%s\n", hex.Dump(d), hex.Dump(etchosts))
+	}
+
 }

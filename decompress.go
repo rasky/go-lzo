@@ -1,15 +1,12 @@
 package lzo
 
 import (
+	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"runtime"
 	"strings"
-)
-
-var (
-	InputUnderrun      = errors.New("input underrun")
-	LookBehindUnderrun = errors.New("lookbehind underrun")
 )
 
 type reader struct {
@@ -18,6 +15,113 @@ type reader struct {
 	buf [4096]byte
 	cur []byte
 	Err error
+}
+
+var (
+	InputUnderrun      = errors.New("input underrun")
+	LookBehindUnderrun = errors.New("lookbehind underrun")
+	Verbose            = true
+	Debug              = func(string, ...interface{}) {}
+)
+
+func (h *Header) String() string {
+	return fmt.Sprintf("Magic %#02x Version %#04x LibVersion %#04x NeededVersion %#04x Method %#02x Level %#02x Flags %#08x Filter %#08x Mode %#08x Mtime %#08x GMTDiff %#08x Name %q DataCSUM %#08x UnCompressedSize %#08x CompressedSize %#08x CompressedCSUM %#08x UncompressedCSUM %#04x",
+		h.Magic,
+		h.Version,
+		h.LibVersion,
+		h.NeededVersion,
+		h.Method,
+		h.Level,
+		h.Flags,
+		h.Filter,
+		h.Mode,
+		h.Mtime,
+		h.GMTDiff,
+		h.Name,
+		h.DataCSUM,
+		h.UnCompressedSize,
+		h.CompressedSize,
+		h.CompressedCSUM,
+		h.UncompressedCSUM)
+}
+
+// readHeader decompresses a Header from an io.Reader. The docs on this format may not exist.
+// Here is a typical header generated for a linux kernel used in a FIT.
+// 00000000  89 4c 5a 4f 00 0d 0a 1a  0a
+//           10 40
+//           20 a0
+//           09 40
+//           01  |.LZO......@ ..@.|
+// 00000010  05
+//           03 00 00 01   // flags.
+//                         no filter
+//           00 00 81 ed // Mode
+//           5f 6e 4d cf // Mtime
+//           00 00 00  |........._nM....|
+// 00000020  00 // GMTIME
+// namelen 0e 76 6d 6c 69 6e 75  78 2e 62 69 6e 61 72 79  |..vmlinux.binary|
+// past the name.
+// From here on, whatever it is, it us a uint32
+// 00000030  a9 d5 0a 8f
+//           00 04 00 00
+//           00 03 06 bb
+//           e8 97 4a 8a  |..............J.|
+// 00000040  00 28 48 8d // is this optional? *yes this may be the optional part. *
+// There will be at most this much, but this may be too much.
+//            25 51 3f c0  00 e8 d4 00 00 00 48 8d  |.(H.%Q?.......H.|
+func readHeader(r io.Reader) (*Header, error) {
+	var h Header
+
+	if _, err := r.Read(h.Magic[:]); err != nil {
+		return nil, err
+	}
+
+	if string(h.Magic[:]) != magic {
+		return nil, fmt.Errorf("Magic is %#02x, should be %#02x", h.Magic, magic)
+	}
+	var n byte
+	// This would be so easy were the variable data not in the middle. but ...
+	// We could use reflect here, but ... eh. It's not that complex.
+	for _, f := range []interface{}{&h.Version, &h.LibVersion, &h.NeededVersion, &h.Method, &h.Level, &h.Flags, &h.Filter, &h.Mode, &h.Mtime, &h.GMTDiff, &n, &h.DataCSUM, &h.UnCompressedSize, &h.CompressedSize, &h.UnCompressedCSUM, &h.CompressedCSUM} {
+		switch f {
+		case &h.Filter:
+			if (h.Flags & fHFilter) == 0 {
+				continue
+			}
+		case &n:
+			b := make([]byte, n)
+			if _, err := r.Read(b); err != nil {
+				return nil, fmt.Errorf("Error reading file name: %v", err)
+			}
+			Debug("Name is %d bytes", n)
+			name := make([]byte, n)
+			if _, err := r.Read(b); err != nil {
+				return nil, fmt.Errorf("Reading file name: %v", err)
+			}
+			h.Name = string(name)
+			Debug("Name is %q", name)
+		case &h.CompressedCSUM:
+			if (h.Flags & (fChecksumAdler | fChecksumCRC32)) == 0 {
+				continue
+			}
+		}
+		if err := binary.Read(r, binary.BigEndian, f); err != nil {
+			return nil, err
+		}
+	}
+	return &h, nil
+}
+
+// DecompressLZOP decompresses a byte slice as compressed by the standard lzop(1) program.
+func DecompressLZOP(r io.Reader) (out []byte, err error) {
+	// This was kind of a nice idea. But the docs are so useless, and different libraries
+	// don't agree. It's awesome.
+	h, err := readHeader(r)
+	if err != nil {
+		return nil, err
+	}
+	Debug("Header: %s", h)
+	return Decompress1X(r, 0, 0)
 }
 
 func newReader(r io.Reader, inlen int) *reader {
@@ -50,6 +154,15 @@ func (in *reader) Rebuffer() {
 		cur = cur[:in.len]
 	}
 	n, err := in.r.Read(cur)
+	if Verbose {
+		n := len(cur)
+		dotdotdot := ""
+		if len(cur) > 64 {
+			n = 32
+			dotdotdot = "..."
+		}
+		Debug("rebuffer: read %#02x bytes: %q%s", n, cur[:n], dotdotdot)
+	}
 	if err != nil {
 		// If EOF is returned, treat it as error only if there are no further
 		// bytes in the window. Otherwise, let's postpone because those bytes
@@ -62,6 +175,9 @@ func (in *reader) Rebuffer() {
 	in.cur = in.cur[:len(rb)+n]
 	if in.len >= 0 {
 		in.len -= n
+	}
+	if Verbose {
+		Debug("Rebuffer: %d bytes left", in.len)
 	}
 }
 
@@ -121,13 +237,17 @@ func (in *reader) ReadMulti(base int) (b int) {
 
 func copyMatch(out *[]byte, m_pos int, n int) {
 	if m_pos+n > len(*out) {
-		// fmt.Println("copy match WITH OVERLAP!")
+		if Verbose {
+			Debug("copy match WITH OVERLAP!")
+		}
 		for i := 0; i < n; i++ {
 			*out = append(*out, (*out)[m_pos])
 			m_pos++
 		}
 	} else {
-		// fmt.Println("copy match:", len(*out), m_pos, m_pos+n)
+		if Verbose {
+			Debug("copy match: %d %d %d", len(*out), m_pos, m_pos+n)
+		}
 		*out = append(*out, (*out)[m_pos:m_pos+n]...)
 	}
 }
@@ -156,13 +276,21 @@ func Decompress1X(r io.Reader, inLen int, outLen int) (out []byte, err error) {
 		// the input, so if the decompressor reads past the end of the input
 		// stream, a runtime error is raised. This saves about 7% of performance
 		// as the reading functions are very hot in the decompressor.
+		Debug("panic:")
 		if r := recover(); r != nil {
+			Debug("recover: %v %T", r, r)
 			if re, ok := r.(runtime.Error); ok {
 				if strings.HasPrefix(re.Error(), "runtime error: index out of range") {
 					err = io.EOF
 					return
 				}
+				if strings.HasPrefix(re.Error(), "runtime error: slice bounds out of range") {
+					err = io.EOF
+					return
+				}
+				Debug("%v does not match a string we know", r)
 			}
+			Debug("Don't know what to do with this type")
 			panic(r)
 		}
 	}()
@@ -177,7 +305,9 @@ func Decompress1X(r io.Reader, inLen int, outLen int) (out []byte, err error) {
 			goto match_next
 		}
 		in.ReadAppend(&out, t)
-		// fmt.Println("begin:", string(out))
+		if Verbose {
+			Debug("begin: %q", string(out))
+		}
 		goto first_literal_run
 	}
 
@@ -190,7 +320,9 @@ begin_loop:
 		t = in.ReadMulti(15)
 	}
 	in.ReadAppend(&out, t+3)
-	// fmt.Println("readappend", t+3, string(out[len(out)-t-3:]))
+	if Verbose {
+		Debug("readappend %d %q", t+3, string(out[len(out)-t-3:]))
+	}
 first_literal_run:
 	ip = in.ReadU8()
 	last2 = ip
@@ -202,9 +334,12 @@ first_literal_run:
 	m_pos -= t >> 2
 	ip = in.ReadU8()
 	m_pos -= int(ip) << 2
-	// fmt.Println("m_pos flr", m_pos, len(out), "\n", string(out))
+	if Verbose {
+		Debug("m_pos flr", m_pos, len(out), "\n", string(out))
+	}
 	if m_pos < 0 {
-		err = LookBehindUnderrun
+		//err = LookBehindUnderrun
+		err = fmt.Errorf("Lookbehind overrun1 at offset %d, m_pos %#02x", ip, m_pos)
 		return
 	}
 	copyMatch(&out, m_pos, 3)
@@ -223,7 +358,9 @@ match:
 		m_pos -= (t >> 2) & 7
 		ip = in.ReadU8()
 		m_pos -= int(ip) << 3
-		// fmt.Println("m_pos t64", m_pos, t, int(ip))
+		if Verbose {
+			Debug("m_pos t64 %d %d %d", m_pos, t, int(ip))
+		}
 		t = (t >> 5) - 1
 		goto copy_match
 	} else if t >= 32 {
@@ -235,7 +372,9 @@ match:
 		v16 := in.ReadU16()
 		m_pos -= v16 >> 2
 		last2 = byte(v16 & 0xFF)
-		// fmt.Println("m_pos t32", m_pos)
+		if Verbose {
+			Debug("m_pos t32 %d", m_pos)
+		}
 	} else if t >= 16 {
 		m_pos = len(out)
 		m_pos -= (t & 8) << 11
@@ -246,29 +385,35 @@ match:
 		v16 := in.ReadU16()
 		m_pos -= v16 >> 2
 		if m_pos == len(out) {
-			// fmt.Println("END", t, v16, m_pos)
+			if Verbose {
+				Debug("END %d %d %d", t, v16, m_pos)
+			}
 			return
 		}
 		m_pos -= 0x4000
 		last2 = byte(v16 & 0xFF)
-		// fmt.Println("m_pos t16", m_pos)
+		if Verbose {
+			Debug("m_pos t16", m_pos)
+		}
 	} else {
 		m_pos = len(out) - 1
 		m_pos -= t >> 2
 		ip = in.ReadU8()
 		m_pos -= int(ip) << 2
 		if m_pos < 0 {
-			err = LookBehindUnderrun
+			err = fmt.Errorf("Lookbehind overrun2 at offset %d, m_pos %#02x", ip, m_pos)
 			return
 		}
-		// fmt.Println("m_pos tX", m_pos)
+		if Verbose {
+			Debug("m_pos tX", m_pos)
+		}
 		copyMatch(&out, m_pos, 2)
 		goto match_done
 	}
 
 copy_match:
 	if m_pos < 0 {
-		err = LookBehindUnderrun
+		err = fmt.Errorf("Lookbehind overrun3 at offset %d, m_pos %#02x", ip, m_pos)
 		return
 	}
 	copyMatch(&out, m_pos, t+2)
@@ -279,7 +424,9 @@ match_done:
 		goto match_end
 	}
 match_next:
-	// fmt.Println("read append finale:", t)
+	if Verbose {
+		Debug("read append finale:%d", t)
+	}
 	in.ReadAppend(&out, t)
 	ip = in.ReadU8()
 	goto match
